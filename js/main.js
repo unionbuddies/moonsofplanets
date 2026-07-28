@@ -17,10 +17,10 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 /* global SYSTEMS, MOONS_FULL */
 
 // ---------------------------------------------------------------- constants --
-const PLANET_DISPLAY_R = 6;        // every planet drawn at this radius (world units)
-const ORBIT_MIN = 9;               // nearest moon orbit
-const MOON_MIN = 0.16;             // smallest visible moon radius
-const MOON_MAX = 1.7;              // largest moon radius (relative to planet)
+const PLANET_DISPLAY_R = 8.5;      // every planet drawn at this radius (world units)
+const ORBIT_MIN = 13;              // nearest moon orbit (kept clear of the planet)
+const MOON_MIN = 0.3;              // smallest visible moon radius
+const MOON_MAX = 2.8;              // largest moon radius (relative to planet)
 const NEUTRAL_MOON = 0x8b8378;     // default colour for un-curated catalogue moons
 
 // The full moon list for a world = JPL catalogue, with curated facts/colour/
@@ -115,7 +115,7 @@ function computeOrbitRadii(moons, outerR) {
 // crowded systems (Jupiter 115, Saturn 291) need a wider shell to stay legible,
 // but not so wide the moons shrink to sub-pixel dots lost among the stars.
 function outerRadiusFor(n) {
-  return Math.min(42 + Math.max(0, n - 20) * 0.14, 68);
+  return Math.min(46 + Math.max(0, n - 20) * 0.14, 72);
 }
 
 // Moon display radius: sqrt scale between the system's own min/max real radii.
@@ -263,8 +263,8 @@ function buildSystem(sys) {
 
   // frame the camera
   controls.target.set(0, 0, 0);
-  camera.position.set(0, outerR * 0.40, outerR * 1.15);
-  controls.minDistance = 8;
+  camera.position.set(0, outerR * 0.38, outerR * 1.02);
+  controls.minDistance = PLANET_DISPLAY_R + 3;   // don't let zoom pass into the planet
   controls.maxDistance = outerR * 3.2;
   controls.update();
 }
