@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Moons of the Planets — an interactive 3D guide</title>
+  <meta name="description" content="Explore every planet and dwarf planet in the Solar System that has a named moon, in draggable 3D." />
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+  <link rel="stylesheet" href="css/styles.css" />
+  <!-- Three.js via import map (works on GitHub Pages / any static host) -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+
+  <!-- ===================== TOP NAV: planet buttons ===================== -->
+  <header id="topbar">
+    <div class="brand" data-goto="home">
+      <span class="brand-mark">☾</span>
+      <span class="brand-text">Moons of the Planets</span>
+    </div>
+    <nav id="planetNav" aria-label="Choose a planet"><!-- buttons injected --></nav>
+  </header>
+
+  <!-- ===================== SHARED 3D CANVAS ===================== -->
+  <canvas id="scene"></canvas>
+
+  <!-- Loading overlay -->
+  <div id="loader"><div class="spinner"></div><p>Loading the Solar System…</p></div>
+
+  <!-- ===================== HOME / LANDING ===================== -->
+  <section id="home" class="overlay-panel">
+    <div class="home-inner">
+      <h1>Moons of the Planets</h1>
+      <p class="lede">
+        Every planet and dwarf planet in our Solar System with a named moon —
+        rendered in 3D. Pick a world below, then <strong>drag to orbit</strong>,
+        <strong>scroll to zoom</strong> and <strong>hover a moon</strong> to learn about it.
+      </p>
+      <div id="homeGrid"><!-- planet cards injected --></div>
+      <p class="hint">Mercury and Venus are missing on purpose — they have no moons at all.</p>
+      <p class="credit">Planet &amp; moon textures by <a href="https://www.solarsystemscope.com/textures/" target="_blank" rel="noopener">Solar System Scope</a> (CC BY 4.0) · 3D via <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a></p>
+    </div>
+  </section>
+
+  <!-- ===================== PLANET VIEW UI ===================== -->
+  <div id="planetView" hidden>
+    <!-- Side panel: famous moons -->
+    <aside id="sidePanel" aria-label="Famous moons">
+      <button id="backBtn" class="back-btn" data-goto="home">← All planets</button>
+      <div id="planetHeader">
+        <h2 id="planetName"></h2>
+        <span id="planetTag" class="tag"></span>
+        <p id="planetBlurb"></p>
+        <p id="moonCount" class="moon-count"></p>
+      </div>
+      <h3 class="side-title">Famous moons</h3>
+      <div id="famousList"><!-- famous moon cards injected --></div>
+      <p class="side-note">Every named moon is in the 3D view — drag to find them all.</p>
+    </aside>
+
+    <!-- Controls hint -->
+    <div id="controlsHint">
+      <span>🖱 Drag to rotate</span><span>⚲ Scroll to zoom</span><span>👆 Hover a moon</span>
+    </div>
+  </div>
+
+  <!-- Hover tooltip (shared) -->
+  <div id="tooltip" hidden></div>
+
+  <script src="js/data.js"></script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
