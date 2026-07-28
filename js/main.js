@@ -128,6 +128,8 @@ function computeMoonRadius(r, rMin, rMax) {
 // ---------------------------------------------------------------- state ------
 let current = null;          // active system
 let currentMoons = [];       // merged moon list for the active system (shared)
+let systemDrift = true;      // gentle rotation of the whole moon system (paused on focus)
+let focusedMesh = null;      // moon the camera flew to via a side-panel click
 const hoverables = [];       // meshes that respond to hover (moons)
 let planetGroup = null;      // group holding planet + moons, rotates gently
 const raycaster = new THREE.Raycaster();
@@ -150,6 +152,7 @@ function clearScene() {
   planetGroup = null;
   hoverables.length = 0;
   hovered = null;
+  focusedMesh = null;
   tooltip.hidden = true;
 }
 
@@ -176,6 +179,7 @@ function makeBody(radius, color, texturePath, extra = {}) {
 function buildSystem(sys) {
   clearScene();
   current = sys;
+  systemDrift = true;                 // resume gentle drift for the new system
   planetGroup = new THREE.Group();
   scene.add(planetGroup);
 
@@ -370,19 +374,29 @@ function focusMoon(moon, card) {
   document.querySelectorAll(".focused").forEach((c) => c.classList.remove("focused"));
   if (card) card.classList.add("focused");
   controls.autoRotate = false;
+  systemDrift = false;                       // freeze the swarm so the moon stays centred
+  focusedMesh = mesh;                        // keep the tooltip glued to it during the fly-in
 
-  const target = mesh.position.clone();
+  // The moon is a child of the slowly-rotating planetGroup, so aim at its true
+  // WORLD position (its local position is un-rotated and would land off-target).
+  planetGroup.updateMatrixWorld(true);
+  const target = mesh.getWorldPosition(new THREE.Vector3());
   const dist = Math.max(4, mesh.scale.x * 9);
   const dir = target.clone().normalize();
   const camGoal = target.clone().add(dir.multiplyScalar(dist)).add(new THREE.Vector3(0, dist * 0.35, 0));
   animateCamera(camGoal, target);
-  showTooltipForMesh(mesh, worldToScreen(mesh.position));
+  showTooltipForMesh(mesh, worldToScreen(target));
 }
 
-// smooth camera tween
+// smooth camera tween — time-based so it completes in a fixed duration
+// regardless of frame rate (slow devices just get fewer, larger steps).
 let camTween = null;
 function animateCamera(posGoal, targetGoal) {
-  camTween = { from: camera.position.clone(), to: posGoal, tf: controls.target.clone(), tt: targetGoal, t: 0 };
+  camTween = {
+    from: camera.position.clone(), to: posGoal,
+    tf: controls.target.clone(), tt: targetGoal,
+    start: performance.now(), dur: 700,
+  };
 }
 
 // ---------------------------------------------------------------- hover ------
@@ -425,7 +439,9 @@ function onPointerMove(e) {
       canvas.style.cursor = "pointer";
     } else {
       canvas.style.cursor = "grab";
-      tooltip.hidden = true;
+      // fall back to the flown-to moon's tooltip instead of hiding it
+      if (focusedMesh) showTooltipForMesh(focusedMesh, worldToScreen(focusedMesh.getWorldPosition(new THREE.Vector3())));
+      else tooltip.hidden = true;
     }
   }
   if (hovered) showTooltipForMesh(hovered, { x: e.clientX, y: e.clientY });
@@ -437,6 +453,14 @@ function onClick() {
 
 canvas.addEventListener("pointermove", onPointerMove);
 canvas.addEventListener("click", onClick);
+
+// dragging the scene dismisses a flown-to moon's pinned tooltip
+controls.addEventListener("start", () => {
+  if (!focusedMesh) return;
+  focusedMesh = null;
+  document.querySelectorAll(".focused").forEach((c) => c.classList.remove("focused"));
+  if (!hovered) tooltip.hidden = true;
+});
 
 // ---------------------------------------------------------------- nav / home -
 function buildNav() {
@@ -512,19 +536,20 @@ window.addEventListener("hashchange", () => {
 // ---------------------------------------------------------------- loop -------
 function animate() {
   requestAnimationFrame(animate);
-  if (planetGroup) planetGroup.rotation.y += 0.0006;   // gentle system drift
+  if (planetGroup && systemDrift) planetGroup.rotation.y += 0.0006;   // gentle system drift
 
   if (camTween) {
-    camTween.t = Math.min(1, camTween.t + 0.045);
-    const e = 1 - Math.pow(1 - camTween.t, 3);          // ease-out cubic
+    const t = Math.min(1, (performance.now() - camTween.start) / camTween.dur);
+    const e = 1 - Math.pow(1 - t, 3);                   // ease-out cubic
     camera.position.lerpVectors(camTween.from, camTween.to, e);
     controls.target.lerpVectors(camTween.tf, camTween.tt, e);
-    if (camTween.t >= 1) camTween = null;
+    if (t >= 1) camTween = null;
   }
 
-  // keep tooltip glued to a focused/hovered mesh as the scene rotates
-  if (hovered && !tooltip.hidden) {
-    const s = worldToScreen(hovered.getWorldPosition(new THREE.Vector3()));
+  // keep tooltip glued to the hovered or flown-to moon (tracks the fly-in and drift)
+  const anchor = hovered || focusedMesh;
+  if (anchor && !tooltip.hidden) {
+    const s = worldToScreen(anchor.getWorldPosition(new THREE.Vector3()));
     tooltip.style.left = s.x + "px";
     tooltip.style.top = s.y + "px";
   }
