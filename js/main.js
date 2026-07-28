@@ -480,6 +480,7 @@ function goToPlanet(name) {
   controls.autoRotate = true;
   homeSection.style.display = "none";
   planetView.hidden = false;
+  applyViewOffset();
   history.replaceState(null, "", "#" + name.toLowerCase());
 }
 
@@ -488,6 +489,7 @@ function goHome() {
   current = null;
   homeSection.style.display = "";
   planetView.hidden = true;
+  applyViewOffset();
   setActiveNav(null);
   // idle: slowly show Earth's system behind the home overlay for ambience
   currentMoons = moonsFor(SYSTEMS[0]);
@@ -530,11 +532,30 @@ function animate() {
   renderer.render(scene, camera);
 }
 
+// ---------------------------------------------------------------- view offset -
+// The side panel (left on desktop, bottom on mobile) covers part of the canvas.
+// Shift the rendered frustum so the planet + moons sit in the *visible* area
+// instead of behind the panel. Raycasting stays correct because the offset lives
+// in the camera's projection matrix.
+function applyViewOffset() {
+  const W = window.innerWidth, H = window.innerHeight;
+  if (planetView.hidden) { camera.clearViewOffset(); return; }
+  if (W > 720) {
+    const side = parseFloat(
+      getComputedStyle(document.documentElement).getPropertyValue("--side-w")) || 340;
+    camera.setViewOffset(W, H, -side / 2, 0, W, H);   // negative x → content shifts right
+  } else {
+    const panelH = H * 0.46;                          // bottom panel height (46vh)
+    camera.setViewOffset(W, H, 0, panelH / 2, W, H);  // positive y → content shifts up
+  }
+}
+
 // ---------------------------------------------------------------- resize -----
 window.addEventListener("resize", () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  applyViewOffset();
 });
 
 // ---------------------------------------------------------------- boot -------
