@@ -2,23 +2,50 @@
 //  Moons of the Planets — 3D engine & UI
 // ----------------------------------------------------------------------------
 //  One shared WebGL scene. Choosing a planet rebuilds the scene with that
-//  planet at the centre and every named moon placed on a compressed orbital
-//  scale so all of them are visible and reachable by dragging. Hovering a moon
-//  raycasts and shows a tooltip; the side panel lists the famous moons.
+//  planet at the centre and EVERY known moon — named or provisional — placed on
+//  a compressed orbital scale so all of them are visible and reachable by
+//  dragging. Every moon is hoverable (tooltip) and listed in the side panel;
+//  the notable "main" moons are highlighted with facts and halos.
 // ============================================================================
 
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
-// SYSTEMS comes from data.js (loaded as a classic script before this module).
-/* global SYSTEMS */
+// SYSTEMS   — curated worlds + notable moons (facts, colours, textures) : data.js
+// MOONS_FULL— full JPL catalogue of every moon per planet             : moons_full.js
+// Both are loaded as classic scripts before this module.
+/* global SYSTEMS, MOONS_FULL */
 
 // ---------------------------------------------------------------- constants --
 const PLANET_DISPLAY_R = 6;        // every planet drawn at this radius (world units)
 const ORBIT_MIN = 9;               // nearest moon orbit
-const ORBIT_MAX = 46;              // farthest moon orbit
-const MOON_MIN = 0.11;             // smallest visible moon radius
+const MOON_MIN = 0.16;             // smallest visible moon radius
 const MOON_MAX = 1.7;              // largest moon radius (relative to planet)
+const NEUTRAL_MOON = 0x8b8378;     // default colour for un-curated catalogue moons
+
+// The full moon list for a world = JPL catalogue, with curated facts/colour/
+// radius/texture overlaid by name. Dwarf planets beyond Pluto aren't in the JPL
+// set, so they fall back to their curated moon list.
+function moonsFor(sys) {
+  const curated = sys.moons || [];
+  const full = (typeof MOONS_FULL !== "undefined" && MOONS_FULL[sys.name]) || null;
+  if (!full) return curated.map((m) => ({ ...m, curated: true }));
+
+  const byName = new Map(curated.map((m) => [m.name, m]));
+  const merged = full.map((fm) => {
+    const c = byName.get(fm.name);
+    if (c) return { ...c, distance: fm.distance, curated: true };   // curated wins, JPL distance
+    return {                                                        // catalogue-only moon
+      name: fm.name, radius: fm.r, distance: fm.distance,
+      discovered: fm.discovered, by: null, color: NEUTRAL_MOON,
+      famous: false, est: true, curated: false,
+    };
+  });
+  // safety: keep any curated moon the catalogue somehow lacks
+  const have = new Set(merged.map((m) => m.name));
+  curated.forEach((c) => { if (!have.has(c.name)) merged.push({ ...c, curated: true }); });
+  return merged;
+}
 
 // ---------------------------------------------------------------- DOM refs ---
 const canvas      = document.getElementById("scene");
@@ -67,7 +94,7 @@ texLoader.load("textures/2k_stars_milky_way.jpg", (t) => {
 // Compress the huge real orbital range onto [ORBIT_MIN, ORBIT_MAX] using ranked
 // spacing (so crowded inner moons still separate) blended with a log of the
 // true distance (so relative order & rough spacing read true).
-function computeOrbitRadii(moons) {
+function computeOrbitRadii(moons, outerR) {
   const n = moons.length;
   const dists = moons.map((m) => m.distance);
   const logMin = Math.log10(Math.min(...dists));
@@ -81,8 +108,14 @@ function computeOrbitRadii(moons) {
     const logT = n > 1 ? (Math.log10(m.distance) - logMin) / span : 0;   // 0..1 by distance
     const rankT = n > 1 ? rankOf[i] / (n - 1) : 0;                       // 0..1 by rank
     const t = 0.45 * logT + 0.55 * rankT;                                // blend
-    return ORBIT_MIN + t * (ORBIT_MAX - ORBIT_MIN);
+    return ORBIT_MIN + t * (outerR - ORBIT_MIN);
   });
+}
+
+// crowded systems (Jupiter 115, Saturn 291) need a wider shell to stay legible,
+// but not so wide the moons shrink to sub-pixel dots lost among the stars.
+function outerRadiusFor(n) {
+  return Math.min(42 + Math.max(0, n - 20) * 0.14, 68);
 }
 
 // Moon display radius: sqrt scale between the system's own min/max real radii.
@@ -94,6 +127,7 @@ function computeMoonRadius(r, rMin, rMax) {
 
 // ---------------------------------------------------------------- state ------
 let current = null;          // active system
+let currentMoons = [];       // merged moon list for the active system (shared)
 const hoverables = [];       // meshes that respond to hover (moons)
 let planetGroup = null;      // group holding planet + moons, rotates gently
 const raycaster = new THREE.Raycaster();
@@ -177,41 +211,50 @@ function buildSystem(sys) {
   planetGroup.add(glow);
 
   // --- moons --------------------------------------------------------------
-  const radii = computeOrbitRadii(sys.moons);
-  const rMin = Math.min(...sys.moons.map((m) => m.radius));
-  const rMax = Math.max(...sys.moons.map((m) => m.radius));
+  const moons = currentMoons;                       // merged list (set in goToPlanet)
+  const outerR = outerRadiusFor(moons.length);
+  const radii = computeOrbitRadii(moons, outerR);
+  const rMin = Math.min(...moons.map((m) => m.radius));
+  const rMax = Math.max(...moons.map((m) => m.radius));
 
-  sys.moons.forEach((moon, i) => {
+  moons.forEach((moon, i) => {
     const orbitR = radii[i];
     // stable pseudo-random angle & inclination from index
     const ang = (i * 2.399963) % (Math.PI * 2);              // golden-angle spread
-    const inc = ((i * 137.5) % 34 - 17) * (Math.PI / 180);   // ±17° tilt
+    const inc = ((i * 137.5) % 40 - 20) * (Math.PI / 180);   // ±20° tilt
     const x = Math.cos(ang) * orbitR;
     const z = Math.sin(ang) * orbitR;
     const y = Math.sin(inc) * orbitR * 0.5;
 
     const mR = computeMoonRadius(moon.radius, rMin, rMax);
-    const mesh = makeBody(mR, moon.color, moon.texture);
+    // faint self-illumination lifts the night side so tiny moons stay readable
+    // against the starfield from any angle (a touch brighter for the small ones)
+    const glint = moon.est ? 0x2a2820 : 0x14140f;
+    const mesh = makeBody(mR, moon.color, moon.texture, moon.texture ? {} : { emissive: glint });
     mesh.position.set(x, y, z);
-    mesh.userData = { moon, baseColor: moon.color };
+    mesh.userData = { moon, emissiveBase: moon.texture ? 0x000000 : glint };
     planetGroup.add(mesh);
     hoverables.push(mesh);
+    moon._mesh = mesh;                              // back-reference for fast lookup
 
-    // faint orbit ring
-    const ringGeo = new THREE.RingGeometry(orbitR - 0.015, orbitR + 0.015, 96);
-    const ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({
-      color: moon.famous ? 0xffd27f : 0x5566aa,
-      transparent: true, opacity: moon.famous ? 0.28 : 0.10, side: THREE.DoubleSide,
-    }));
-    ring.rotation.x = Math.PI / 2 - inc;
-    planetGroup.add(ring);
+    // Orbit rings only for the curated / notable moons — drawing one for every
+    // catalogue moon (up to 291) would bury the view in clutter.
+    if (moon.curated) {
+      const ringGeo = new THREE.RingGeometry(orbitR - 0.02, orbitR + 0.02, 96);
+      const ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({
+        color: moon.famous ? 0xffd27f : 0x5566aa,
+        transparent: true, opacity: moon.famous ? 0.30 : 0.12, side: THREE.DoubleSide,
+      }));
+      ring.rotation.x = Math.PI / 2 - inc;
+      planetGroup.add(ring);
+    }
 
-    // a bright halo for famous moons so they're easy to spot
+    // a bright halo for famous ("main") moons so they're easy to spot
     if (moon.famous) {
       const halo = new THREE.Mesh(sharedGeo, new THREE.MeshBasicMaterial({
         color: 0xffd27f, transparent: true, opacity: 0.16, side: THREE.BackSide,
       }));
-      halo.scale.setScalar(mR * 1.6);
+      halo.scale.setScalar(Math.max(mR * 1.7, 0.5));
       halo.position.copy(mesh.position);
       mesh.userData.halo = halo;
       planetGroup.add(halo);
@@ -220,19 +263,30 @@ function buildSystem(sys) {
 
   // frame the camera
   controls.target.set(0, 0, 0);
-  camera.position.set(0, ORBIT_MAX * 0.42, ORBIT_MAX * 1.35);
-  controls.minDistance = 9;
-  controls.maxDistance = ORBIT_MAX * 3;
+  camera.position.set(0, outerR * 0.40, outerR * 1.15);
+  controls.minDistance = 8;
+  controls.maxDistance = outerR * 3.2;
   controls.update();
 }
 
 // ---------------------------------------------------------------- side panel -
-function fmtRadius(r) {
-  const d = r * 2;
-  return d >= 1 ? `${Math.round(d).toLocaleString()} km across` : `~${(d).toFixed(1)} km across`;
+function fmtSize(moon) {
+  const d = moon.radius * 2;
+  const val = d >= 10 ? Math.round(d).toLocaleString()
+            : d >= 1  ? d.toFixed(0)
+            : d.toFixed(1);
+  return moon.est ? `≈ ${val} km across (est.)` : `${val} km across`;
 }
 function fmtDistance(km) {
   return km >= 1e6 ? `${(km / 1e6).toFixed(2)} M km out` : `${Math.round(km).toLocaleString()} km out`;
+}
+function fmtDiscovery(moon) {
+  const when = (moon.discovered === "ancient") ? "in antiquity"
+             : (moon.discovered === "?" || moon.discovered == null) ? null
+             : moon.discovered;
+  if (when && moon.by) return `Discovered ${when} · ${moon.by}`;
+  if (when)            return `Discovered ${when}`;
+  return "Discovery details not catalogued";
 }
 function hex(c) { return "#" + c.toString(16).padStart(6, "0"); }
 
@@ -242,11 +296,15 @@ function renderSidePanel(sys) {
   tagEl.textContent = sys.dwarf ? "Dwarf planet" : "Planet";
   tagEl.className = "tag" + (sys.dwarf ? " dwarf" : "");
   document.getElementById("planetBlurb").textContent = sys.blurb;
-  const famous = sys.moons.filter((m) => m.famous);
+
+  const moons = currentMoons;
+  const famous = moons.filter((m) => m.famous);
   document.getElementById("moonCount").textContent =
-    `${sys.moons.length} named moon${sys.moons.length > 1 ? "s" : ""} · ${famous.length} highlighted`;
+    `${moons.length} known moon${moons.length > 1 ? "s" : ""} · ${famous.length} highlighted`;
 
   famousList.innerHTML = "";
+
+  // --- main / famous moons (with facts) -----------------------------------
   famous.forEach((moon) => {
     const card = document.createElement("div");
     card.className = "moon-card";
@@ -254,19 +312,47 @@ function renderSidePanel(sys) {
       <div class="mc-head">
         <span class="mc-dot" style="background:${hex(moon.color)}"></span>
         <span class="mc-name">${moon.name}</span>
-        <span class="mc-sub">${fmtRadius(moon.radius)}</span>
+        <span class="mc-sub">${fmtSize(moon)}</span>
       </div>
       <p class="mc-fact">${moon.fact || ""}</p>`;
-    card.addEventListener("click", () => focusMoon(moon, card));
-    card.addEventListener("mouseenter", () => highlightMesh(moon, true));
-    card.addEventListener("mouseleave", () => highlightMesh(moon, false));
+    wireMoonCard(card, moon);
     famousList.appendChild(card);
   });
+
+  // --- every moon (compact rows) ------------------------------------------
+  const others = moons.filter((m) => !m.famous)
+                      .sort((a, b) => a.distance - b.distance);
+  if (others.length) {
+    const h = document.createElement("h3");
+    h.className = "side-title all-title";
+    h.textContent = `All ${moons.length} moons`;
+    famousList.appendChild(h);
+
+    const list = document.createElement("div");
+    list.className = "all-moons";
+    others.forEach((moon) => {
+      const row = document.createElement("button");
+      row.className = "moon-row";
+      row.innerHTML = `
+        <span class="mr-dot" style="background:${hex(moon.color)}"></span>
+        <span class="mr-name">${moon.name}</span>
+        <span class="mr-sub">${fmtSize(moon)}</span>`;
+      wireMoonCard(row, moon);
+      list.appendChild(row);
+    });
+    famousList.appendChild(list);
+  }
   famousList.parentElement.scrollTop = 0;
 }
 
+function wireMoonCard(el, moon) {
+  el.addEventListener("click", () => focusMoon(moon, el));
+  el.addEventListener("mouseenter", () => highlightMesh(moon, true));
+  el.addEventListener("mouseleave", () => highlightMesh(moon, false));
+}
+
 function meshForMoon(moon) {
-  return hoverables.find((m) => m.userData.moon === moon);
+  return moon._mesh || hoverables.find((m) => m.userData.moon === moon);
 }
 
 // briefly emphasise a moon's halo when hovering its side card
@@ -274,14 +360,14 @@ function highlightMesh(moon, on) {
   const mesh = meshForMoon(moon);
   if (!mesh) return;
   if (mesh.userData.halo) mesh.userData.halo.material.opacity = on ? 0.5 : 0.16;
-  mesh.material.emissive?.setHex(on ? 0x333044 : 0x000000);
+  mesh.material.emissive?.setHex(on ? 0x333044 : (mesh.userData.emissiveBase ?? 0x000000));
 }
 
 // fly the camera to look at a moon
 function focusMoon(moon, card) {
   const mesh = meshForMoon(moon);
   if (!mesh) return;
-  document.querySelectorAll(".moon-card.focused").forEach((c) => c.classList.remove("focused"));
+  document.querySelectorAll(".focused").forEach((c) => c.classList.remove("focused"));
   if (card) card.classList.add("focused");
   controls.autoRotate = false;
 
@@ -307,14 +393,17 @@ function worldToScreen(v) {
 
 function showTooltipForMesh(mesh, screen) {
   const moon = mesh.userData.moon;
+  const note = moon.fact
+    ? `<p class="tt-fact">${moon.fact}</p>`
+    : (moon.est ? `<p class="tt-fact tt-dim">A small outer moon; no detailed measurements or story recorded yet. Its size here is an estimate.</p>` : "");
   tooltip.innerHTML = `
-    <div class="tt-name">${moon.name}${moon.famous ? '<span class="tt-badge">Famous</span>' : ""}</div>
+    <div class="tt-name">${moon.name}${moon.famous ? '<span class="tt-badge">Main moon</span>' : ""}</div>
     <div class="tt-stats">
-      <span>${fmtRadius(moon.radius)}</span>
+      <span>${fmtSize(moon)}</span>
       <span>${fmtDistance(moon.distance)}</span>
     </div>
-    ${moon.fact ? `<p class="tt-fact">${moon.fact}</p>` : ""}
-    <div class="tt-disc">Discovered ${moon.discovered === "ancient" ? "in antiquity" : moon.discovered} · ${moon.by}</div>`;
+    ${note}
+    <div class="tt-disc">${fmtDiscovery(moon)}</div>`;
   tooltip.style.left = screen.x + "px";
   tooltip.style.top = screen.y + "px";
   tooltip.hidden = false;
@@ -329,7 +418,7 @@ function onPointerMove(e) {
   const hit = hits.length ? hits[0].object : null;
 
   if (hit !== hovered) {
-    if (hovered) hovered.material.emissive?.setHex(0x000000);
+    if (hovered) hovered.material.emissive?.setHex(hovered.userData.emissiveBase ?? 0x000000);
     hovered = hit;
     if (hovered) {
       hovered.material.emissive?.setHex(0x333044);
@@ -384,6 +473,7 @@ function setActiveNav(name) {
 function goToPlanet(name) {
   const sys = SYSTEMS.find((s) => s.name === name);
   if (!sys) return;
+  currentMoons = moonsFor(sys);      // build merged list once; scene + panel share it
   buildSystem(sys);
   renderSidePanel(sys);
   setActiveNav(name);
@@ -400,6 +490,7 @@ function goHome() {
   planetView.hidden = true;
   setActiveNav(null);
   // idle: slowly show Earth's system behind the home overlay for ambience
+  currentMoons = moonsFor(SYSTEMS[0]);
   buildSystem(SYSTEMS[0]);
   history.replaceState(null, "", "#home");
 }

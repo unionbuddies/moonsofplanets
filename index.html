@@ -45,7 +45,7 @@
       </p>
       <div id="homeGrid"><!-- planet cards injected --></div>
       <p class="hint">Mercury and Venus are missing on purpose — they have no moons at all.</p>
-      <p class="credit">Planet &amp; moon textures by <a href="https://www.solarsystemscope.com/textures/" target="_blank" rel="noopener">Solar System Scope</a> (CC BY 4.0) · 3D via <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a></p>
+      <p class="credit">Moon names &amp; orbits from <a href="https://ssd.jpl.nasa.gov/sats/elem/" target="_blank" rel="noopener">NASA/JPL</a> · textures by <a href="https://www.solarsystemscope.com/textures/" target="_blank" rel="noopener">Solar System Scope</a> (CC BY 4.0) · 3D via <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a></p>
     </div>
   </section>
 
@@ -60,9 +60,9 @@
         <p id="planetBlurb"></p>
         <p id="moonCount" class="moon-count"></p>
       </div>
-      <h3 class="side-title">Famous moons</h3>
-      <div id="famousList"><!-- famous moon cards injected --></div>
-      <p class="side-note">Every named moon is in the 3D view — drag to find them all.</p>
+      <h3 class="side-title">Main moons</h3>
+      <div id="famousList"><!-- main moons + full list injected --></div>
+      <p class="side-note">Every moon here is also in the 3D view — click one to fly to it, or drag to explore the whole swarm.</p>
     </aside>
 
     <!-- Controls hint -->
@@ -75,6 +75,7 @@
   <div id="tooltip" hidden></div>
 
   <script src="js/data.js"></script>
+  <script src="js/moons_full.js"></script>
   <script type="module" src="js/main.js"></script>
 </body>
 </html>
