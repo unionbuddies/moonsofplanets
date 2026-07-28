@@ -455,11 +455,12 @@ function buildNav() {
     const orbStyle = sys.texture
       ? `background-image:url('${sys.texture}')`
       : `background:radial-gradient(circle at 38% 32%, ${hex(sys.color)}, #05070f)`;
+    const n = moonsFor(sys).length;                  // full catalogue count
     card.innerHTML = `
       ${sys.dwarf ? '<span class="pc-dwarf">Dwarf</span>' : ""}
       <div class="planet-orb" style="${orbStyle}"></div>
       <h3>${sys.name}</h3>
-      <p class="pc-meta">${sys.moons.length} named moon${sys.moons.length > 1 ? "s" : ""}</p>`;
+      <p class="pc-meta">${n} moon${n > 1 ? "s" : ""}</p>`;
     card.addEventListener("click", () => goToPlanet(sys.name));
     homeGrid.appendChild(card);
   });
