@@ -21,7 +21,19 @@ const PLANET_DISPLAY_R = 8.5;      // every planet drawn at this radius (world u
 const ORBIT_MIN = 13;              // nearest moon orbit (kept clear of the planet)
 const MOON_MIN = 0.3;              // smallest visible moon radius
 const MOON_MAX = 2.8;              // largest moon radius (relative to planet)
-const NEUTRAL_MOON = 0x8b8378;     // default colour for un-curated catalogue moons
+// A palette of realistic moon tints (icy grey-white, tan, rock, reddish, bluish)
+// so the catalogue moons aren't a uniform grey. Chosen by a stable name hash.
+const MOON_TINTS = [
+  0xb8b0a3, 0xcdc6ba, 0x9c8f7c, 0xa89684, 0x8a7d6d,
+  0x7f8a93, 0xc7bcaa, 0x6f6a63, 0xb0a597, 0x9a8a78,
+  0xc2a98c, 0x8d9299,
+];
+function hashStr(s) {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+function moonTint(name) { return MOON_TINTS[hashStr(name) % MOON_TINTS.length]; }
 
 // The full moon list for a world = JPL catalogue, with curated facts/colour/
 // radius/texture overlaid by name. Dwarf planets beyond Pluto aren't in the JPL
@@ -37,7 +49,7 @@ function moonsFor(sys) {
     if (c) return { ...c, distance: fm.distance, curated: true };   // curated wins, JPL distance
     return {                                                        // catalogue-only moon
       name: fm.name, radius: fm.r, distance: fm.distance,
-      discovered: fm.discovered, by: null, color: NEUTRAL_MOON,
+      discovered: fm.discovered, by: null, color: moonTint(fm.name),
       famous: false, est: true, curated: false,
     };
   });
@@ -176,6 +188,67 @@ function makeBody(radius, color, texturePath, extra = {}) {
   return mesh;
 }
 
+// -------------------------------------------------- procedural moon surfaces --
+// A handful of shared GREYSCALE detail textures (craters, mottling, speckle).
+// Each moon uses one as both colour map and bump map; the material's colour
+// tints it, so one texture serves many moons cheaply. Built once, on demand.
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function drawCrater(ctx, x, y, r) {
+  const g = ctx.createRadialGradient(x - r * 0.3, y - r * 0.3, 0, x, y, r);
+  g.addColorStop(0, "rgba(60,60,60,0.55)");         // shadowed floor
+  g.addColorStop(0.72, "rgba(95,95,95,0.32)");
+  g.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
+  ctx.strokeStyle = "rgba(238,238,238,0.42)";       // bright rim
+  ctx.lineWidth = Math.max(0.5, r * 0.16);
+  ctx.beginPath(); ctx.arc(x, y, r * 0.94, 0, 7); ctx.stroke();
+}
+function makeMoonDetail(seed) {
+  const S = 256, c = document.createElement("canvas");
+  c.width = S; c.height = S;
+  const ctx = c.getContext("2d"), rnd = mulberry32(seed);
+  ctx.fillStyle = "#cbcbcb"; ctx.fillRect(0, 0, S, S);         // bright base (keeps colours vivid)
+  for (let i = 0; i < 14; i++) {                               // large-scale mottling
+    const x = rnd() * S, y = rnd() * S, r = 40 + rnd() * 90;
+    const v = 150 + Math.floor(rnd() * 95), a = 0.08 + rnd() * 0.14;
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, `rgba(${v},${v},${v},${a})`);
+    g.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
+  }
+  const craters = 55 + Math.floor(rnd() * 55);
+  for (let i = 0; i < craters; i++) {
+    const r = 1.5 + rnd() * rnd() * 15, x = rnd() * S, y = rnd() * S;
+    drawCrater(ctx, x, y, r);
+    if (x < r * 2) drawCrater(ctx, x + S, y, r);              // wrap across the seam
+    if (x > S - r * 2) drawCrater(ctx, x - S, y, r);
+  }
+  const img = ctx.getImageData(0, 0, S, S), d = img.data;      // fine speckle
+  for (let i = 0; i < d.length; i += 4) {
+    const n = (rnd() - 0.5) * 26;
+    d[i] += n; d[i + 1] += n; d[i + 2] += n;
+  }
+  ctx.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.anisotropy = 4;
+  return tex;
+}
+let moonDetails = null;
+function moonDetailFor(name) {
+  if (!moonDetails) moonDetails = [1, 2, 3, 4, 5, 6].map(makeMoonDetail);
+  return moonDetails[hashStr(name) % moonDetails.length];
+}
+
 function buildSystem(sys) {
   clearScene();
   current = sys;
@@ -234,7 +307,12 @@ function buildSystem(sys) {
     // faint self-illumination lifts the night side so tiny moons stay readable
     // against the starfield from any angle (a touch brighter for the small ones)
     const glint = moon.est ? 0x2a2820 : 0x14140f;
-    const mesh = makeBody(mR, moon.color, moon.texture, moon.texture ? {} : { emissive: glint });
+    let extra = {};
+    if (!moon.texture) {
+      const detail = moonDetailFor(moon.name);          // procedural craters + relief
+      extra = { map: detail, bumpMap: detail, bumpScale: 0.4, roughness: 0.95, emissive: glint };
+    }
+    const mesh = makeBody(mR, moon.color, moon.texture, extra);
     mesh.position.set(x, y, z);
     mesh.userData = { moon, emissiveBase: moon.texture ? 0x000000 : glint };
     planetGroup.add(mesh);
