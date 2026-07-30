@@ -300,10 +300,11 @@ function buildSystem(sys) {
     const orbitR = radii[i];
     // stable pseudo-random angle & inclination from index
     const ang = (i * 2.399963) % (Math.PI * 2);              // golden-angle spread
-    const inc = ((i * 137.5) % 40 - 20) * (Math.PI / 180);   // ±20° tilt
+    const tilt = ((i * 137.5) % 40 - 20) * (Math.PI / 180);  // ±20° orbital-plane tilt
+    // place the moon ON its (tilted) orbit circle so it sits exactly on the ring
     const x = Math.cos(ang) * orbitR;
-    const z = Math.sin(ang) * orbitR;
-    const y = Math.sin(inc) * orbitR * 0.5;
+    const y = Math.sin(ang) * Math.sin(tilt) * orbitR;
+    const z = Math.sin(ang) * Math.cos(tilt) * orbitR;
 
     const mR = computeMoonRadius(moon.radius, rMin, rMax);
     // faint self-illumination lifts the night side so tiny moons stay readable
@@ -329,7 +330,7 @@ function buildSystem(sys) {
         color: moon.famous ? 0xffd27f : 0x5566aa,
         transparent: true, opacity: moon.famous ? 0.30 : 0.12, side: THREE.DoubleSide,
       }));
-      ring.rotation.x = Math.PI / 2 - inc;
+      ring.rotation.x = Math.PI / 2 - tilt;   // same tilt as the moon's orbit circle
       planetGroup.add(ring);
     }
 

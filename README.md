@@ -69,7 +69,12 @@ in the JPL satellite set, so those come from the curated list.
 
 ## Credits
 
-- Planet and Moon textures: [Solar System Scope](https://www.solarsystemscope.com/textures/),
+- Planet + Earth's-Moon textures: [Solar System Scope](https://www.solarsystemscope.com/textures/),
   licensed **CC BY 4.0**.
-- Moon names, orbits and counts: [NASA/JPL Solar System Dynamics](https://ssd.jpl.nasa.gov/sats/elem/).
+- Main-moon surface maps (Io, Europa, Ganymede, Callisto, Mimas, Enceladus,
+  Tethys, Dione, Rhea, Iapetus, Triton, Phobos, Deimos): NASA / USGS / Voyager /
+  Galileo / Cassini imagery via [Wikimedia Commons](https://commons.wikimedia.org)
+  (public domain). Uranus's moons and most small moons have no full-surface
+  imagery (only partial Voyager 2 coverage), so they use procedural surfaces.
+- Moon names, orbits, periods and counts: [NASA/JPL Solar System Dynamics](https://ssd.jpl.nasa.gov/sats/elem/).
 - 3D rendering: [three.js](https://threejs.org).
