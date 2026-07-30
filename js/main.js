@@ -44,11 +44,13 @@ function moonsFor(sys) {
   if (!full) return curated.map((m) => ({ ...m, curated: true }));
 
   const byName = new Map(curated.map((m) => [m.name, m]));
+  const orbit = (fm) => ({ e: fm.e, inc: fm.inc, period: fm.period });
   const merged = full.map((fm) => {
     const c = byName.get(fm.name);
-    if (c) return { ...c, distance: fm.distance, curated: true };   // curated wins, JPL distance
+    // curated wins for name/radius/colour/facts; JPL supplies distance + orbit
+    if (c) return { ...c, distance: fm.distance, ...orbit(fm), curated: true };
     return {                                                        // catalogue-only moon
-      name: fm.name, radius: fm.r, distance: fm.distance,
+      name: fm.name, radius: fm.r, distance: fm.distance, ...orbit(fm),
       discovered: fm.discovered, by: null, color: moonTint(fm.name),
       famous: false, est: true, curated: false,
     };
@@ -370,6 +372,28 @@ function fmtDiscovery(moon) {
   if (when)            return `Discovered ${when}`;
   return "Discovery details not catalogued";
 }
+// orbital period in the most readable unit
+function fmtPeriod(days) {
+  if (days == null) return null;
+  const d = Math.abs(days);
+  if (d < 1)   return `${(d * 24).toFixed(1)} h`;
+  if (d < 100) return `${d.toFixed(d < 10 ? 2 : 1)} days`;
+  if (d < 900) return `${Math.round(d)} days`;
+  return `${(d / 365.25).toFixed(1)} yr`;
+}
+// a plain-language orbit descriptor from inclination + eccentricity
+function orbitDescriptor(moon) {
+  const parts = [];
+  if (moon.inc != null) {
+    const retro = moon.inc > 90;
+    const tilt = retro ? 180 - moon.inc : moon.inc;
+    parts.push(retro ? "retrograde" : "prograde");
+    // regular = low tilt & round orbit; otherwise a captured/irregular moon
+    const irregular = tilt > 40 || (moon.e ?? 0) > 0.25 || retro;
+    parts.push(irregular ? "irregular" : "regular");
+  }
+  return parts;
+}
 function hex(c) { return "#" + c.toString(16).padStart(6, "0"); }
 
 function renderSidePanel(sys) {
@@ -488,12 +512,24 @@ function showTooltipForMesh(mesh, screen) {
   const note = moon.fact
     ? `<p class="tt-fact">${moon.fact}</p>`
     : (moon.est ? `<p class="tt-fact tt-dim">A small outer moon; no detailed measurements or story recorded yet. Its size here is an estimate.</p>` : "");
+
+  // --- orbital facts (real JPL data) ------------------------------------
+  const period = fmtPeriod(moon.period);
+  const orbitBits = [];
+  if (period) orbitBits.push(`orbits every ${period}`);
+  orbitBits.push(...orbitDescriptor(moon));
+  if (moon.inc != null) orbitBits.push(`${(moon.inc > 90 ? 180 - moon.inc : moon.inc).toFixed(1)}° tilt`);
+  if (moon.e != null)   orbitBits.push(`e ${moon.e.toFixed(3)}`);
+  const orbit = orbitBits.length
+    ? `<div class="tt-orbit">${orbitBits.join(" · ")}</div>` : "";
+
   tooltip.innerHTML = `
     <div class="tt-name">${moon.name}${moon.famous ? '<span class="tt-badge">Main moon</span>' : ""}</div>
     <div class="tt-stats">
       <span>${fmtSize(moon)}</span>
       <span>${fmtDistance(moon.distance)}</span>
     </div>
+    ${orbit}
     ${note}
     <div class="tt-disc">${fmtDiscovery(moon)}</div>`;
   tooltip.style.left = screen.x + "px";

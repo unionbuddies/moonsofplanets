@@ -353,6 +353,7 @@ html, body {
 .tt-name { font-weight: 700; font-size: 15px; margin-bottom: 3px; display:flex; align-items:center; gap:7px; }
 .tt-badge { font-size: 9px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--accent-warm); border:1px solid rgba(255,210,127,0.4); border-radius: 10px; padding: 1px 6px; }
 .tt-stats { font-size: 11.5px; color: var(--accent); margin-bottom: 6px; display:flex; flex-wrap:wrap; gap:4px 12px; }
+.tt-orbit { font-size: 11px; color: var(--muted); margin-bottom: 7px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
 .tt-fact { font-size: 12.5px; line-height: 1.5; color: var(--muted); margin: 0; }
 .tt-disc { font-size: 11px; color: var(--muted); opacity: 0.8; margin-top: 6px; }
 
