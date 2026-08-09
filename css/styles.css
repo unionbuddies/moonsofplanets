@@ -342,6 +342,31 @@ html, body {
 }
 .tt-fact.tt-dim { opacity: 0.75; font-style: italic; }
 
+/* -------------------- View controls (buttons) -------------------- */
+#viewControls {
+  position: fixed;
+  top: calc(var(--topbar-h) + 16px);
+  right: 20px;
+  z-index: 16;
+  display: flex; gap: 8px;
+}
+#viewControls button {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  font-family: inherit; font-size: 12.5px;
+  padding: 8px 14px; border-radius: 20px;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition: background 0.16s, border-color 0.16s, color 0.16s, transform 0.1s;
+}
+#viewControls button:hover { border-color: var(--accent); background: var(--card-hover); }
+#viewControls button:active { transform: scale(0.96); }
+#highlightBtn.active {
+  background: var(--accent-warm); color: #1a1204; border-color: var(--accent-warm); font-weight: 600;
+}
+
 /* -------------------- Controls hint -------------------- */
 #controlsHint {
   position: fixed;

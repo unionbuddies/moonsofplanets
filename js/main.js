@@ -70,6 +70,8 @@ const homeSection = document.getElementById("home");
 const planetView  = document.getElementById("planetView");
 const tooltip     = document.getElementById("tooltip");
 const famousList  = document.getElementById("famousList");
+const highlightBtn = document.getElementById("highlightBtn");
+const resetBtn     = document.getElementById("resetBtn");
 
 // ---------------------------------------------------------------- three core -
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
@@ -86,8 +88,9 @@ controls.dampingFactor = 0.06;
 controls.rotateSpeed = 0.6;
 controls.minDistance = 9;
 controls.maxDistance = 260;
-controls.autoRotate = true;
-controls.autoRotateSpeed = 0.35;
+// The moon-system group provides the ambient rotation (and stops crisply on
+// hover); the camera itself does not auto-spin.
+controls.autoRotate = false;
 
 // Lighting: a soft "sun" plus ambient fill so night sides aren't pure black.
 const sun = new THREE.DirectionalLight(0xffffff, 2.4);
@@ -142,9 +145,11 @@ function computeMoonRadius(r, rMin, rMax) {
 // ---------------------------------------------------------------- state ------
 let current = null;          // active system
 let currentMoons = [];       // merged moon list for the active system (shared)
-let systemDrift = true;      // gentle rotation of the whole moon system (paused on focus)
 let focusedMesh = null;      // moon the camera flew to via a side-panel click
 const hoverables = [];       // meshes that respond to hover (moons)
+const halos = [];            // gold glow meshes around main moons (toggleable)
+let highlightsOn = false;    // are the main-moon highlights currently shown?
+let initialView = null;      // camera pose captured when a planet is first opened
 let planetGroup = null;      // group holding planet + moons, rotates gently
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
@@ -165,6 +170,7 @@ function clearScene() {
   }
   planetGroup = null;
   hoverables.length = 0;
+  halos.length = 0;
   hovered = null;
   focusedMesh = null;
   tooltip.hidden = true;
@@ -254,7 +260,6 @@ function moonDetailFor(name) {
 function buildSystem(sys) {
   clearScene();
   current = sys;
-  systemDrift = true;                 // resume gentle drift for the new system
   planetGroup = new THREE.Group();
   scene.add(planetGroup);
 
@@ -334,14 +339,17 @@ function buildSystem(sys) {
       planetGroup.add(ring);
     }
 
-    // a bright halo for famous ("main") moons so they're easy to spot
+    // a bright halo for famous ("main") moons — hidden until the user toggles
+    // "Highlight main moons" on.
     if (moon.famous) {
       const halo = new THREE.Mesh(sharedGeo, new THREE.MeshBasicMaterial({
         color: 0xffd27f, transparent: true, opacity: 0.16, side: THREE.BackSide,
       }));
       halo.scale.setScalar(Math.max(mR * 1.7, 0.5));
       halo.position.copy(mesh.position);
+      halo.visible = highlightsOn;
       mesh.userData.halo = halo;
+      halos.push(halo);
       planetGroup.add(halo);
     }
   });
@@ -352,6 +360,9 @@ function buildSystem(sys) {
   controls.minDistance = PLANET_DISPLAY_R + 3;   // don't let zoom pass into the planet
   controls.maxDistance = outerR * 3.2;
   controls.update();
+
+  // remember this opening pose so "Reset view" can return to it
+  initialView = { pos: camera.position.clone(), target: controls.target.clone() };
 }
 
 // ---------------------------------------------------------------- side panel -
@@ -476,9 +487,7 @@ function focusMoon(moon, card) {
   if (!mesh) return;
   document.querySelectorAll(".focused").forEach((c) => c.classList.remove("focused"));
   if (card) card.classList.add("focused");
-  controls.autoRotate = false;
-  systemDrift = false;                       // freeze the swarm so the moon stays centred
-  focusedMesh = mesh;                        // keep the tooltip glued to it during the fly-in
+  focusedMesh = mesh;                        // freezes the swarm + keeps the tooltip glued on
 
   // The moon is a child of the slowly-rotating planetGroup, so aim at its true
   // WORLD position (its local position is un-rotated and would land off-target).
@@ -617,12 +626,30 @@ function goToPlanet(name) {
   buildSystem(sys);
   renderSidePanel(sys);
   setActiveNav(name);
-  controls.autoRotate = true;
   homeSection.style.display = "none";
   planetView.hidden = false;
   applyViewOffset();
   history.replaceState(null, "", "#" + name.toLowerCase());
 }
+
+// toggle the gold highlight halos around the main moons
+function toggleHighlights() {
+  highlightsOn = !highlightsOn;
+  halos.forEach((h) => (h.visible = highlightsOn));
+  highlightBtn.classList.toggle("active", highlightsOn);
+  highlightBtn.setAttribute("aria-pressed", String(highlightsOn));
+}
+
+// return to the pose the planet page opened with
+function resetView() {
+  focusedMesh = null;
+  document.querySelectorAll(".focused").forEach((c) => c.classList.remove("focused"));
+  tooltip.hidden = true;
+  if (initialView) animateCamera(initialView.pos.clone(), initialView.target.clone());
+}
+
+highlightBtn.addEventListener("click", toggleHighlights);
+resetBtn.addEventListener("click", resetView);
 
 function goHome() {
   clearScene();
@@ -651,7 +678,9 @@ window.addEventListener("hashchange", () => {
 // ---------------------------------------------------------------- loop -------
 function animate() {
   requestAnimationFrame(animate);
-  if (planetGroup && systemDrift) planetGroup.rotation.y += 0.0006;   // gentle system drift
+  // gentle moon-system drift, paused while hovering a moon or after flying to
+  // one, so the scene holds still for inspection
+  if (planetGroup && !hovered && !focusedMesh) planetGroup.rotation.y += 0.0006;
 
   if (camTween) {
     const t = Math.min(1, (performance.now() - camTween.start) / camTween.dur);
