@@ -503,11 +503,19 @@ function focusMoon(moon, card) {
 // smooth camera tween — time-based so it completes in a fixed duration
 // regardless of frame rate (slow devices just get fewer, larger steps).
 let camTween = null;
-function animateCamera(posGoal, targetGoal) {
+function animateCamera(posGoal, targetGoal, resetRot = false) {
+  // when resetting, also spin the moon system back to its opening orientation
+  // (rotation 0), taking the shortest path to the nearest equivalent angle.
+  let rotFrom = 0, rotTo = 0;
+  if (resetRot && planetGroup) {
+    rotFrom = planetGroup.rotation.y;
+    rotTo = Math.round(rotFrom / (Math.PI * 2)) * (Math.PI * 2);
+  }
   camTween = {
     from: camera.position.clone(), to: posGoal,
     tf: controls.target.clone(), tt: targetGoal,
     start: performance.now(), dur: 700,
+    resetRot, rotFrom, rotTo,
   };
 }
 
@@ -645,7 +653,7 @@ function resetView() {
   focusedMesh = null;
   document.querySelectorAll(".focused").forEach((c) => c.classList.remove("focused"));
   tooltip.hidden = true;
-  if (initialView) animateCamera(initialView.pos.clone(), initialView.target.clone());
+  if (initialView) animateCamera(initialView.pos.clone(), initialView.target.clone(), true);
 }
 
 highlightBtn.addEventListener("click", toggleHighlights);
@@ -678,15 +686,19 @@ window.addEventListener("hashchange", () => {
 // ---------------------------------------------------------------- loop -------
 function animate() {
   requestAnimationFrame(animate);
-  // gentle moon-system drift, paused while hovering a moon or after flying to
-  // one, so the scene holds still for inspection
-  if (planetGroup && !hovered && !focusedMesh) planetGroup.rotation.y += 0.0006;
+  // gentle moon-system drift, paused while hovering a moon, after flying to one,
+  // or while a reset is spinning the system back to its opening position
+  const resetting = camTween && camTween.resetRot;
+  if (planetGroup && !hovered && !focusedMesh && !resetting) planetGroup.rotation.y += 0.0006;
 
   if (camTween) {
     const t = Math.min(1, (performance.now() - camTween.start) / camTween.dur);
     const e = 1 - Math.pow(1 - t, 3);                   // ease-out cubic
     camera.position.lerpVectors(camTween.from, camTween.to, e);
     controls.target.lerpVectors(camTween.tf, camTween.tt, e);
+    if (camTween.resetRot && planetGroup) {
+      planetGroup.rotation.y = camTween.rotFrom + (camTween.rotTo - camTween.rotFrom) * e;
+    }
     if (t >= 1) camTween = null;
   }
 
