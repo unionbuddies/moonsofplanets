@@ -99,13 +99,9 @@ scene.add(sun);
 scene.add(new THREE.AmbientLight(0x6a7bbf, 0.55));
 scene.add(new THREE.HemisphereLight(0xbcd2ff, 0x141018, 0.35));
 
-// Starfield background.
+// Plain dark-space background (no starfield / nebulae).
 const texLoader = new THREE.TextureLoader();
-texLoader.load("textures/2k_stars_milky_way.jpg", (t) => {
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.mapping = THREE.EquirectangularReflectionMapping;
-  scene.background = t;
-}, undefined, () => { scene.background = new THREE.Color(0x05070f); });
+scene.background = new THREE.Color(0x05070f);
 
 // ---------------------------------------------------------------- scaling ----
 // Compress the huge real orbital range onto [ORBIT_MIN, ORBIT_MAX] using ranked
@@ -744,7 +740,7 @@ window.addEventListener("resize", () => {
 buildNav();
 animate();
 
-// hide loader once the star texture (or a short timeout) is ready
+// hide the loader and route to the initial view
 let booted = false;
 function boot() {
   if (booted) return; booted = true;
@@ -756,5 +752,4 @@ function boot() {
   if (match) goToPlanet(match.name);
   else goHome();
 }
-texLoader.load("textures/2k_stars_milky_way.jpg", boot, undefined, boot);
-setTimeout(boot, 2500);   // safety net
+boot();
